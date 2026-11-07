@@ -129,7 +129,7 @@ export default function App() {
 
     // Registro do Service Worker PWA
     if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
   }, []);
 

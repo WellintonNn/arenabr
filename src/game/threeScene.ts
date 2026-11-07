@@ -2,11 +2,20 @@ import * as THREE from 'three';
 import { ElementType, HeroConfig, EnemyConfig } from '../types/game';
 
 /* =========================================================================
-   TEXTURAS PROCEDURAIS ULTRA-DETALHADAS
+   TEXTURAS PROCEDURAIS ULTRA-DETALHADAS (COM CACHE EM GPU)
    ========================================================================= */
+
+const relicTextureCache = new Map<ElementType, THREE.CanvasTexture>();
+const orbTextureCache = new Map<ElementType, THREE.CanvasTexture>();
+let cachedGrassTexture: THREE.CanvasTexture | null = null;
+const spriteFramesCache = new Map<string, THREE.CanvasTexture[]>();
 
 // 1. Relicário Arcano de Veromos (Tamanho harmônico, alta densidade rúnica)
 export function createVeromosRelicTexture(element: ElementType): THREE.CanvasTexture {
+  if (relicTextureCache.has(element)) {
+    return relicTextureCache.get(element)!;
+  }
+
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 512;
@@ -118,11 +127,16 @@ export function createVeromosRelicTexture(element: ElementType): THREE.CanvasTex
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  relicTextureCache.set(element, tex);
   return tex;
 }
 
 // 2. Esferas de Energia Ultra-Vivas e Detalhadas
 export function createVibrantOrbTexture(element: ElementType): THREE.CanvasTexture {
+  if (orbTextureCache.has(element)) {
+    return orbTextureCache.get(element)!;
+  }
+
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 128;
@@ -162,11 +176,16 @@ export function createVibrantOrbTexture(element: ElementType): THREE.CanvasTextu
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  orbTextureCache.set(element, tex);
   return tex;
 }
 
 // 3. Textura de Grama Procedural da Arena
 export function createGrassTexture(): THREE.CanvasTexture {
+  if (cachedGrassTexture) {
+    return cachedGrassTexture;
+  }
+
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 512;
@@ -185,11 +204,12 @@ export function createGrassTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(6, 6);
+  cachedGrassTexture = tex;
   return tex;
 }
 
 /* =========================================================================
-   SPRITESHEET PROCESSOR (COM COLORAÇÃO ELEMENTAL)
+   SPRITESHEET PROCESSOR (COM COLORAÇÃO ELEMENTAL E CACHE)
    ========================================================================= */
 export interface SpriteSheetController {
   sprite: THREE.Sprite;
@@ -211,63 +231,69 @@ export function processSpriteSheet(
   const rows = 4;
   const fw = 64;
   const fh = 64;
-  const frames: THREE.CanvasTexture[] = [];
 
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cv = document.createElement('canvas');
-      cv.width = fw;
-      cv.height = fh;
-      const ctx = cv.getContext('2d', { alpha: true });
-      if (!ctx) continue;
-      ctx.imageSmoothingEnabled = false;
+  const cacheKey = heroConfig ? heroConfig.element : 'skeleton';
+  let frames = spriteFramesCache.get(cacheKey);
 
-      ctx.drawImage(sourceImg, c * fw, r * fh, fw, fh, 0, 0, fw, fh);
+  if (!frames) {
+    frames = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cv = document.createElement('canvas');
+        cv.width = fw;
+        cv.height = fh;
+        const ctx = cv.getContext('2d', { alpha: true });
+        if (!ctx) continue;
+        ctx.imageSmoothingEnabled = false;
 
-      if (heroConfig) {
-        const imgData = ctx.getImageData(0, 0, fw, fh);
-        const d = imgData.data;
-        const [hr, hg, hb] = heroConfig.hairColor;
+        ctx.drawImage(sourceImg, c * fw, r * fh, fw, fh, 0, 0, fw, fh);
 
-        for (let y = 0; y < fh; y++) {
-          for (let x = 0; x < fw; x++) {
-            const idx = (y * fw + x) * 4;
-            if (d[idx + 3] < 35) continue;
+        if (heroConfig) {
+          const imgData = ctx.getImageData(0, 0, fw, fh);
+          const d = imgData.data;
+          const [hr, hg, hb] = heroConfig.hairColor;
 
-            const red = d[idx];
-            const green = d[idx + 1];
-            const blue = d[idx + 2];
-            const isSilverHair =
-              y >= 4 &&
-              y <= 32 &&
-              Math.abs(red - green) < 25 &&
-              Math.abs(red - blue) < 25 &&
-              red > 75 &&
-              red < 240;
+          for (let y = 0; y < fh; y++) {
+            for (let x = 0; x < fw; x++) {
+              const idx = (y * fw + x) * 4;
+              if (d[idx + 3] < 35) continue;
 
-            if (isSilverHair) {
-              const lum = (red * 0.299 + green * 0.587 + blue * 0.114) / 255;
-              d[idx] = Math.min(255, hr * lum * 1.35);
-              d[idx + 1] = Math.min(255, hg * lum * 1.35);
-              d[idx + 2] = Math.min(255, hb * lum * 1.35);
+              const red = d[idx];
+              const green = d[idx + 1];
+              const blue = d[idx + 2];
+              const isSilverHair =
+                y >= 4 &&
+                y <= 32 &&
+                Math.abs(red - green) < 25 &&
+                Math.abs(red - blue) < 25 &&
+                red > 75 &&
+                red < 240;
+
+              if (isSilverHair) {
+                const lum = (red * 0.299 + green * 0.587 + blue * 0.114) / 255;
+                d[idx] = Math.min(255, hr * lum * 1.35);
+                d[idx + 1] = Math.min(255, hg * lum * 1.35);
+                d[idx + 2] = Math.min(255, hb * lum * 1.35);
+              }
             }
           }
+          ctx.putImageData(imgData, 0, 0);
+
+          // Runas místicas nos punhos/mangas
+          ctx.fillStyle = heroConfig.stripeColor;
+          ctx.fillRect(21, 35, 3, 2);
+          ctx.fillRect(40, 35, 3, 2);
         }
-        ctx.putImageData(imgData, 0, 0);
 
-        // Runas místicas nos punhos/mangas
-        ctx.fillStyle = heroConfig.stripeColor;
-        ctx.fillRect(21, 35, 3, 2);
-        ctx.fillRect(40, 35, 3, 2);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        frames.push(tex);
       }
-
-      const tex = new THREE.CanvasTexture(cv);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      frames.push(tex);
     }
+    spriteFramesCache.set(cacheKey, frames);
   }
 
   const mat = new THREE.SpriteMaterial({

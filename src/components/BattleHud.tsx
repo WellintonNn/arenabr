@@ -6,6 +6,7 @@ import { playSound } from '../game/audio';
 
 export interface FloatingUnitLabel {
   id: string;
+  slot: number;
   isHero: boolean;
   name: string;
   hpPercent: number;
@@ -44,7 +45,7 @@ interface BattleHudProps {
   onReturnToLobby: () => void;
 }
 
-export const BattleHud: React.FC<BattleHudProps> = ({
+export const BattleHud: React.FC<BattleHudProps> = React.memo(({
   activeHero,
   activeHeroHp,
   activeHeroMaxHp,
@@ -191,7 +192,16 @@ export const BattleHud: React.FC<BattleHudProps> = ({
 
         {/* Selected Enemy Target Header */}
         {targetEnemy && (
-          <div className="flex items-center flex-row-reverse gap-2 bg-[#0a121c]/95 px-3 py-2 rounded-2xl border border-red-500/50 shadow-[0_8px_24px_rgba(0,0,0,0.7)] min-w-[130px] max-w-[190px] text-right">
+          <div
+            onClick={() => {
+              if (!isBusy) {
+                playSound('click');
+                onSelectTarget((targetEnemy as any).slot !== undefined ? ((targetEnemy as any).slot + 1) % 3 : 0);
+              }
+            }}
+            className="flex items-center flex-row-reverse gap-2 bg-[#0a121c]/95 px-3 py-2 rounded-2xl border border-red-500/50 hover:border-red-400 shadow-[0_8px_24px_rgba(0,0,0,0.7)] min-w-[130px] max-w-[190px] text-right cursor-pointer active:scale-95 transition"
+            title="Toque para alternar o alvo inimigo"
+          >
             <div className="w-10 h-10 rounded-full border-2 border-red-500 flex items-center justify-center text-lg font-black flex-shrink-0 bg-red-950/70 shadow-[0_0_12px_rgba(255,42,85,0.7)]">
               ☠
             </div>
@@ -238,7 +248,7 @@ export const BattleHud: React.FC<BattleHudProps> = ({
 
       {/* Floating 3D Combatant Labels com Ghost Trail & Indicador de Mira */}
       <div className="fixed inset-0 pointer-events-none z-20 overflow-hidden">
-        {floatingLabels.map((label, idx) => {
+        {floatingLabels.map((label) => {
           if (label.isDead) return null;
           const isLow = label.hpPercent < 30;
           return (
@@ -247,7 +257,8 @@ export const BattleHud: React.FC<BattleHudProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 if (!label.isHero && !isBusy) {
-                  onSelectTarget(idx % 3);
+                  playSound('click');
+                  onSelectTarget(label.slot);
                 }
               }}
               style={{
@@ -255,17 +266,26 @@ export const BattleHud: React.FC<BattleHudProps> = ({
                 top: `${label.screenY}px`,
                 transform: 'translate(-50%, -100%)'
               }}
-              className={`absolute flex flex-col items-center pointer-events-auto cursor-pointer transition-transform active:scale-110 ${
-                label.isTarget ? 'z-30 scale-105' : 'z-20'
+              className={`absolute flex flex-col items-center pointer-events-auto cursor-pointer p-2 rounded-2xl transition-all ${
+                label.isTarget ? 'z-30 scale-110' : 'z-20 hover:scale-105 opacity-90'
               }`}
             >
-              {/* Target indicator arrow */}
-              {label.isTarget && !label.isHero && (
-                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[11px] border-t-red-500 mb-0.5 filter drop-shadow-[0_0_10px_#ff2255] animate-bounce" />
+              {/* Retículo de Alvo / Mira nos Inimigos */}
+              {!label.isHero && (
+                <div
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider mb-1 shadow-md transition-all ${
+                    label.isTarget
+                      ? 'bg-red-600 text-white border border-amber-300 shadow-[0_0_12px_#ff2255] animate-bounce'
+                      : 'bg-black/70 text-slate-300 border border-white/20 hover:border-red-400'
+                  }`}
+                >
+                  <span>{label.isTarget ? '🔻 ALVO' : 'MIRA'}</span>
+                </div>
               )}
+
               {/* Mini HP bar com pulso de perigo se baixo */}
               <div
-                className={`w-12 h-2 bg-[#060c12]/95 border rounded-full overflow-hidden shadow-lg ${
+                className={`w-14 h-2.5 bg-[#060c12]/95 border rounded-full overflow-hidden shadow-lg ${
                   isLow ? 'border-red-400 animate-pulse' : 'border-white/30'
                 }`}
               >
@@ -402,4 +422,4 @@ export const BattleHud: React.FC<BattleHudProps> = ({
       )}
     </div>
   );
-};
+});

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { ElementType, HeroConfig, EnemyConfig, ScreenState } from './types/game';
+import { ElementType, HeroConfig, EnemyConfig, ScreenState, StageConfig } from './types/game';
 import { INITIAL_HEROES, INITIAL_ENEMIES, HERO_POSITIONS } from './game/heroData';
+import { WORLDS_DATA } from './game/adventureData';
 import { calculateSkillDamage, calculateOrbDamage, checkBattleState, calculateAwakenedStats } from './game/rules';
 import { playSound, isSoundEnabled } from './game/audio';
 import {
@@ -24,7 +25,9 @@ import {
   playWindGust,
   playPurpleLightning
 } from './game/visualEffects';
-import { LobbyScreen } from './components/LobbyScreen';
+import { TitleScreen } from './components/TitleScreen';
+import { FloatingIslandLobby } from './components/FloatingIslandLobby';
+import { AdventureModal } from './components/AdventureModal';
 import { HeroScreen } from './components/HeroScreen';
 import { PrepScreen } from './components/PrepScreen';
 import { BattleHud, FloatingUnitLabel, DamagePopupItem } from './components/BattleHud';
@@ -55,7 +58,12 @@ interface BattleEnemyState extends EnemyConfig {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<ScreenState>('lobby');
+  const [screen, setScreen] = useState<ScreenState>('title'); // Começa com "Toque para Iniciar"
+  const [isAdventureModalOpen, setIsAdventureModalOpen] = useState<boolean>(false);
+  const [selectedStage, setSelectedStage] = useState<StageConfig>(WORLDS_DATA.forest.stages[0]);
+  const [pwaUpdateAvailable, setPwaUpdateAvailable] = useState<boolean>(false);
+  const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+
   const [heroes, setHeroes] = useState<Record<ElementType, HeroConfig>>(INITIAL_HEROES);
   const [formation, setFormation] = useState<ElementType[]>(['water', 'fire', 'wind']);
   const [soundOn, setSoundOn] = useState<boolean>(true);
@@ -75,6 +83,15 @@ export default function App() {
   const [damagePopups, setDamagePopups] = useState<DamagePopupItem[]>([]);
   const [battleResult, setBattleResult] = useState<'victory' | 'defeat' | null>(null);
 
+  // Refs de Otimização de Performance
+  const screenRef = useRef<ScreenState>(screen);
+  const frameCountRef = useRef<number>(0);
+  const tempWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
   // Referências Three.js
   const containerRef = useRef<HTMLDivElement | null>(null);
   const fxOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -89,6 +106,7 @@ export default function App() {
   const targetIdxRef = useRef<number>(1);
   const currentTurnIdxRef = useRef<number>(0);
   const turnOrderRef = useRef<Array<BattleHeroState | BattleEnemyState>>([]);
+  const updateHudStateRef = useRef<() => void>(() => {});
 
   const rawYasRef = useRef<CanvasImageSource | null>(null);
   const rawSkeletonRef = useRef<CanvasImageSource | null>(null);
@@ -127,11 +145,43 @@ export default function App() {
       }
     );
 
-    // Registro do Service Worker PWA
+    // Registro do Service Worker PWA com Detecção Inteligente de Atualizações
     if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js').then((reg) => {
+        if (reg.waiting) {
+          waitingWorkerRef.current = reg.waiting;
+          setPwaUpdateAvailable(true);
+        }
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                waitingWorkerRef.current = newWorker;
+                setPwaUpdateAvailable(true);
+              }
+            });
+          }
+        });
+      }).catch(() => {});
+
+      // Checa atualizações quando o app ganha foco
+      const onVisChange = () => {
+        if (!document.hidden && 'serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistration().then((reg) => reg?.update().catch(() => {}));
+        }
+      };
+      window.addEventListener('visibilitychange', onVisChange);
+      return () => window.removeEventListener('visibilitychange', onVisChange);
     }
   }, []);
+
+  const handleApplyPwaUpdate = () => {
+    if (waitingWorkerRef.current) {
+      waitingWorkerRef.current.postMessage({ type: 'SKIP_WAITING' });
+    }
+    window.location.reload();
+  };
 
   // Inicialização da Cena 3D Principal (Arena Floresta do Éter)
   useEffect(() => {
@@ -186,33 +236,40 @@ export default function App() {
     arenaPlate.position.set(0, -0.04, 0);
     scene.add(arenaPlate);
 
-    // Árvores ao Redor da Arena
+    // Árvores ao Redor da Arena (Geometrias e materiais compartilhados em GPU para máxima performance)
+    const trunkGeo = new THREE.CylinderGeometry(0.24, 0.42, 2.4, 7);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2918, roughness: 0.9 });
+    const leafGeo1 = new THREE.IcosahedronGeometry(1.35, 1);
+    const leafMat1 = new THREE.MeshStandardMaterial({ color: 0x224822, roughness: 0.8 });
+    const leafGeo2 = new THREE.IcosahedronGeometry(1.1, 1);
+    const leafMat2 = new THREE.MeshStandardMaterial({ color: 0x2f602f, roughness: 0.8 });
+    const leafGeo3 = new THREE.IcosahedronGeometry(0.8, 1);
+    const leafMat3 = new THREE.MeshStandardMaterial({ color: 0x417c41, roughness: 0.8 });
+
     for (let i = 0; i < 20; i++) {
       const a = (i / 20) * Math.PI * 2;
       const d = 9.8 + Math.random() * 6.0;
       const scale = 0.9 + Math.random() * 0.5;
       const tg = new THREE.Group();
       tg.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
+      tg.scale.set(scale, scale, scale);
 
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.24 * scale, 0.42 * scale, 2.4 * scale, 8),
-        new THREE.MeshStandardMaterial({ color: 0x3d2918, roughness: 0.9 })
-      );
-      trunk.position.y = 1.2 * scale;
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 1.2;
       tg.add(trunk);
 
-      [
-        { y: 2.1, r: 1.35, c: 0x224822 },
-        { y: 2.9, r: 1.1, c: 0x2f602f },
-        { y: 3.7, r: 0.8, c: 0x417c41 }
-      ].forEach((tier) => {
-        const leaf = new THREE.Mesh(
-          new THREE.IcosahedronGeometry(tier.r * scale, 1),
-          new THREE.MeshStandardMaterial({ color: tier.c, roughness: 0.8 })
-        );
-        leaf.position.y = tier.y * scale;
-        tg.add(leaf);
-      });
+      const l1 = new THREE.Mesh(leafGeo1, leafMat1);
+      l1.position.y = 2.1;
+      tg.add(l1);
+
+      const l2 = new THREE.Mesh(leafGeo2, leafMat2);
+      l2.position.y = 2.9;
+      tg.add(l2);
+
+      const l3 = new THREE.Mesh(leafGeo3, leafMat3);
+      l3.position.y = 3.7;
+      tg.add(l3);
+
       scene.add(tg);
     }
 
@@ -227,12 +284,17 @@ export default function App() {
     }
     particlePoolRef.current = pool;
 
-    // Loop de Animação e Renderização da Cena Principal
+    // Loop de Animação e Renderização da Cena Principal com Otimização de Ciclos
     let reqId: number;
     const clock = new THREE.Clock();
 
     function animate() {
       reqId = requestAnimationFrame(animate);
+
+      // Pausa renderização 3D da arena quando encoberta pelo HeroScreen ou aba minimizada
+      if (screenRef.current === 'heroes' || document.hidden) {
+        return;
+      }
       const dt = Math.min(clock.getDelta(), 0.05);
       const t = clock.getElapsedTime();
 
@@ -301,28 +363,30 @@ export default function App() {
         }
       }
 
-      // Atualização contínua das barras de vida flutuantes ancoradas na cabeça (v.y += 1.25)
-      if (battleHeroesRef.current.length > 0) {
+      // Atualização otimizada das barras de vida flutuantes ancoradas na cabeça (somente durante batalha a cada 2 frames)
+      frameCountRef.current++;
+      if (screenRef.current === 'battle' && battleHeroesRef.current.length > 0 && frameCountRef.current % 2 === 0) {
         const labels: FloatingUnitLabel[] = [];
         const units = [...battleHeroesRef.current, ...battleEnemiesRef.current];
         const targetSlot = targetIdxRef.current;
+        const tempPos = tempWorldPosRef.current;
 
         for (const unit of units) {
-          const worldPos = new THREE.Vector3();
-          unit.group.getWorldPosition(worldPos);
-          worldPos.y += 1.25; // Ancorado perfeitamente na cabeça do sprite
+          unit.group.getWorldPosition(tempPos);
+          tempPos.y += 1.25; // Ancorado perfeitamente na cabeça do sprite
 
-          const sp = project3DToScreen(worldPos, camera);
+          const sp = project3DToScreen(tempPos, camera);
           const isTarget = !('skills' in unit) && unit.slot === targetSlot;
           const unitDisplayName = 'name' in unit ? unit.name : ('awakened' in unit && unit.awakened ? unit.awakenedName : unit.baseName);
 
           labels.push({
             id: unit.id,
+            slot: unit.slot,
             isHero: 'skills' in unit,
             name: unitDisplayName,
             hpPercent: Math.max(0, (unit.currentHp / unit.maxHp) * 100),
-            screenX: sp.x,
-            screenY: sp.y,
+            screenX: Math.round(sp.x),
+            screenY: Math.round(sp.y),
             isTarget,
             isDead: unit.dead
           });
@@ -341,9 +405,37 @@ export default function App() {
     };
     window.addEventListener('resize', handleResize);
 
+    const handlePointerDown = (e: PointerEvent) => {
+      if (screenRef.current !== 'battle') return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      let closestEnemy: BattleEnemyState | null = null;
+      let closestDist = 85;
+
+      for (const enemy of battleEnemiesRef.current) {
+        if (enemy.dead) continue;
+        const p = project3DToScreen(enemy.group.position, camera);
+        const dist = Math.hypot(clickX - p.x, clickY - p.y);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestEnemy = enemy;
+        }
+      }
+
+      if (closestEnemy) {
+        targetIdxRef.current = closestEnemy.slot;
+        playSound('strike');
+        updateHudStateRef.current();
+      }
+    };
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+
     return () => {
       cancelAnimationFrame(reqId);
       window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.dispose();
     };
   }, []);
@@ -409,10 +501,16 @@ export default function App() {
     }, 1800);
   };
 
-  // Inicialização de Nova Batalha
-  const setupBattle = () => {
+  // Inicialização de Nova Batalha com Bioma e Chefe
+  const setupBattle = (stageToPlay?: StageConfig) => {
+    const stage = stageToPlay || selectedStage;
     const scene = sceneRef.current;
     if (!scene || !rawYasRef.current || !rawSkeletonRef.current) return;
+
+    // Adaptação de Bioma 3D do Mundo
+    const world = WORLDS_DATA[stage.worldId];
+    scene.background = new THREE.Color(world.fogColor);
+    scene.fog = new THREE.FogExp2(world.fogColor, 0.022);
 
     // Limpa combatentes antigos
     battleHeroesRef.current.forEach((h) => {
@@ -448,7 +546,6 @@ export default function App() {
 
       // SÓ ANEXA O RELICÁRIO E AS ESFERAS SE ESTIVER DESPERTADO!
       if (baseHero.awakened) {
-        // isFacingCamera = false -> O herói está de costas, o relicário fica em z: +0.08
         totem = attachVeromosTotem(group, elem, false);
         orbs = attachOrbTrio(group, elem);
       }
@@ -472,18 +569,25 @@ export default function App() {
     });
     battleHeroesRef.current = newHeroes;
 
-    // 3 Inimigos Agrupados
+    // Inimigos da Fase Selecionada (com Escala Especial de Chefe)
     const newEnemies: BattleEnemyState[] = [];
-    INITIAL_ENEMIES.forEach((en, idx) => {
-      const pedestal = createPedestal(en.pos, en.color, false);
+    stage.enemies.forEach((en, idx) => {
+      const isBoss = !!en.isBoss;
+      const scaleMultiplier = en.scale || (isBoss ? 2.15 : 1.0);
+
+      const pedestal = createPedestal(en.pos, isBoss ? 0xff0044 : en.color, false);
+      if (isBoss) {
+        pedestal.group.scale.set(1.4, 1.4, 1.4);
+      }
       scene.add(pedestal.group);
 
       const group = new THREE.Group();
-      group.position.set(en.pos[0], 0.35, en.pos[2]);
+      group.position.set(en.pos[0], 0.35 * scaleMultiplier, en.pos[2]);
       scene.add(group);
 
       const spr = processSpriteSheet(rawSkeletonRef.current!, null);
       spr.sprite.material.color.setHex(en.color);
+      spr.sprite.scale.set(1.7 * scaleMultiplier, 1.7 * scaleMultiplier, 1);
       group.add(spr.sprite);
       setIdle(spr, 2); // Olha para o sul em direção aos heróis
 
@@ -513,7 +617,7 @@ export default function App() {
     turnOrderRef.current = living;
 
     updateHudState();
-    postActionTicker('Batalha Iniciada! Que os arcanos decidam o destino.');
+    postActionTicker(`⚔️ Batalha Iniciada: ${stage.name}!`);
   };
 
   const getActiveCombatant = () => {
@@ -532,6 +636,7 @@ export default function App() {
   };
 
   const updateHudState = () => {
+    updateHudStateRef.current = updateHudState;
     const active = getActiveCombatant();
     const target = getTargetEnemy();
 
@@ -686,36 +791,70 @@ export default function App() {
         playSound('strike');
         startWalk(active.spr, 0, 14);
 
-        // Avanço físico
+        // Avanço físico direto para as coordenadas X e Z do oponente selecionado
+        const strikeTargetPos = new THREE.Vector3(to3D.x, from3D.y, to3D.z + 0.95);
+        const origHeroScaleX = active.spr.sprite.scale.x;
+        const origHeroScaleY = active.spr.sprite.scale.y;
+        const origEnemyScaleX = target.spr.sprite.scale.x;
+        const origEnemyScaleY = target.spr.sprite.scale.y;
+        const origTargetZ = target.group.position.z;
+
+        // 1. Corrida fluida em direção ao inimigo selecionado (interpolação X e Z)
         await new Promise<void>((r) => {
           let t = 0;
           function s() {
-            t = Math.min(1, t + 0.09);
-            active.group.position.z = THREE.MathUtils.lerp(from3D.z, to3D.z + 1.1, t);
+            t = Math.min(1, t + 0.1);
+            active.group.position.x = THREE.MathUtils.lerp(from3D.x, strikeTargetPos.x, t);
+            active.group.position.z = THREE.MathUtils.lerp(from3D.z, strikeTargetPos.z, t);
             if (t < 1) requestAnimationFrame(s);
             else r();
           }
           s();
         });
+
+        // 2. Efeito de Squash & Stretch de impacto físico dinâmico:
+        // Herói se estica em direção ao oponente para parecer um golpe físico real
+        active.spr.sprite.scale.set(origHeroScaleX * 1.35, origHeroScaleY * 0.76, 1);
+        active.group.position.z = strikeTargetPos.z - 0.28; // Avança colidindo no corpo do oponente
+
+        // O oponente se espreme com o choque e recua
+        target.spr.sprite.scale.set(origEnemyScaleX * 1.25, origEnemyScaleY * 0.74, 1);
+        target.group.position.z = origTargetZ - 0.38;
 
         trigger3DExplosion(to3D, 0xffffff);
         await hitFlash(target);
         target.currentHp = Math.max(0, target.currentHp - rawDamage);
         spawnDamagePopup(target, `${isCrit ? 'CRÍTICO! ' : ''}-${rawDamage}`, '#ffffff');
 
-        // Retorno
+        // Pausa breve de impacto para sentir a colisão visceral (freeze frame de impacto)
+        await new Promise((r) => setTimeout(r, 110));
+
+        // Rebote elástico e restauração gradual das formas
+        active.spr.sprite.scale.set(origHeroScaleX, origHeroScaleY, 1);
+        active.group.position.z = strikeTargetPos.z;
+
+        target.spr.sprite.scale.set(origEnemyScaleX * 0.92, origEnemyScaleY * 1.08, 1);
+        target.group.position.z = origTargetZ;
+        setTimeout(() => {
+          if (!target.dead) {
+            target.spr.sprite.scale.set(origEnemyScaleX, origEnemyScaleY, 1);
+          }
+        }, 80);
+
+        // 3. Caminhada de retorno para a base do herói (interpolação X e Z reversa)
         startWalk(active.spr, 2, 14);
         await new Promise<void>((r) => {
           let t = 0;
           function s() {
-            t = Math.min(1, t + 0.09);
-            active.group.position.z = THREE.MathUtils.lerp(to3D.z + 1.1, from3D.z, t);
+            t = Math.min(1, t + 0.1);
+            active.group.position.x = THREE.MathUtils.lerp(strikeTargetPos.x, from3D.x, t);
+            active.group.position.z = THREE.MathUtils.lerp(strikeTargetPos.z, from3D.z, t);
             if (t < 1) requestAnimationFrame(s);
             else r();
           }
           s();
         });
-        active.group.position.z = from3D.z;
+        active.group.position.copy(from3D);
         setIdle(active.spr, 0);
 
       } else if (skill.animKey === 'water_jet') {
@@ -908,23 +1047,63 @@ export default function App() {
 
   return (
     <main className="relative w-full h-full h-screen overflow-hidden bg-[#050c14] select-none touch-none">
-      {/* Container Three.js da Arena 3D */}
-      <div ref={containerRef} className="fixed inset-0 w-full h-full pointer-events-auto" />
+      {/* Container Three.js da Arena 3D (Renderiza apenas durante a batalha para máxima performance) */}
+      <div
+        ref={containerRef}
+        className={`fixed inset-0 w-full h-full ${screen === 'battle' ? 'block pointer-events-auto' : 'hidden pointer-events-none'}`}
+      />
 
       {/* Camada de Efeitos Visuais SVG */}
       <div ref={fxOverlayRef} className="fixed inset-0 pointer-events-none z-25 overflow-hidden" />
 
-      {/* Tela do Lobby */}
+      {/* Notificação Inteligente de Atualização PWA */}
+      {pwaUpdateAvailable && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white rounded-xl shadow-2xl border border-amber-400/50 text-xs font-semibold backdrop-blur-md">
+          <span>✨ Nova versão disponível do Bunker25!</span>
+          <button
+            onClick={handleApplyPwaUpdate}
+            className="px-2.5 py-1 bg-amber-950/80 hover:bg-black rounded-lg text-amber-200 text-xs font-bold transition-all border border-amber-500/50 cursor-pointer shadow-md"
+          >
+            ATUALIZAR
+          </button>
+        </div>
+      )}
+
+      {/* Tela de Abertura Misteriosa "Toque para Iniciar" */}
+      {screen === 'title' && (
+        <TitleScreen
+          onStart={() => {
+            setScreen('lobby');
+          }}
+        />
+      )}
+
+      {/* Lobby com Ilha Flutuante 3D e Heróis Andando */}
       {screen === 'lobby' && (
-        <LobbyScreen
+        <FloatingIslandLobby
+          heroes={heroes}
+          rawYasImage={rawYasRef.current}
           soundOn={soundOn}
           onToggleSound={() => setSoundOn((s) => !s)}
-          onStartBattle={() => {
-            setupBattle();
-            setScreen('battle');
-          }}
+          onOpenAdventure={() => setIsAdventureModalOpen(true)}
           onOpenHeroes={() => setScreen('heroes')}
           onOpenPrep={() => setScreen('prep')}
+          pwaUpdateAvailable={pwaUpdateAvailable}
+          onApplyPwaUpdate={handleApplyPwaUpdate}
+        />
+      )}
+
+      {/* Modal de Aventura (Mundos 1 a 4 com 5 fases e Chefe) */}
+      {isAdventureModalOpen && screen === 'lobby' && (
+        <AdventureModal
+          currentEnergy={120}
+          onClose={() => setIsAdventureModalOpen(false)}
+          onSelectStage={(stage) => {
+            setSelectedStage(stage);
+            setIsAdventureModalOpen(false);
+            setupBattle(stage);
+            setScreen('battle');
+          }}
         />
       )}
 

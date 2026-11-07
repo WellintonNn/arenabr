@@ -11,7 +11,7 @@ interface LobbyScreenProps {
   onToggleSound: () => void;
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({
+export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
   onStartBattle,
   onOpenHeroes,
   onOpenPrep,
@@ -69,9 +69,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
         context.save();
         context.fillStyle = p.color;
+        // Halo difuso cósmico de alto desempenho (sem custo de shadowBlur)
+        context.globalAlpha = p.alpha * 0.26;
+        context.beginPath();
+        context.arc(p.x, p.y, p.r * 2.6, 0, Math.PI * 2);
+        context.fill();
+
+        // Núcleo cintilante estelar
         context.globalAlpha = p.alpha;
-        context.shadowColor = p.color;
-        context.shadowBlur = 8;
         context.beginPath();
         context.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         context.fill();
@@ -227,4 +232,4 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       </div>
     </section>
   );
-};
+});

@@ -11,7 +11,7 @@ interface PrepScreenProps {
   onStartBattle: () => void;
 }
 
-export const PrepScreen: React.FC<PrepScreenProps> = ({
+export const PrepScreen: React.FC<PrepScreenProps> = React.memo(({
   formation,
   heroes,
   onCycleSlot,
@@ -138,4 +138,4 @@ export const PrepScreen: React.FC<PrepScreenProps> = ({
       </button>
     </section>
   );
-};
+});

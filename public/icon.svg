@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="iconBg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#193754"/>
+      <stop offset="70%" stop-color="#081420"/>
+      <stop offset="100%" stop-color="#03080e"/>
+    </radialGradient>
+    <linearGradient id="fireWing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffa64d"/><stop offset="100%" stop-color="#ff2200"/>
+    </linearGradient>
+    <linearGradient id="waterWing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#80f2ff"/><stop offset="100%" stop-color="#0066ff"/>
+    </linearGradient>
+    <filter id="iconGlow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#iconBg)" stroke="#225380" stroke-width="8"/>
+  <circle cx="256" cy="256" r="215" stroke="#00d9ff" stroke-width="3" stroke-dasharray="10 10" opacity="0.4"/>
+  <path d="M225,230 C155,125 50,145 35,215 C90,215 130,245 150,285 C110,285 70,305 80,345 C120,335 160,325 200,295 Z" fill="url(#fireWing)" filter="url(#iconGlow)"/>
+  <path d="M287,230 C357,125 462,145 477,215 C422,215 382,245 362,285 C402,285 442,305 432,345 C392,335 352,325 312,295 Z" fill="url(#waterWing)" filter="url(#iconGlow)"/>
+  <polygon points="256,120 286,215 256,260 226,215" fill="#19ff85" filter="url(#iconGlow)"/>
+  <circle cx="256" cy="256" r="46" fill="#09141f" stroke="#ffe066" stroke-width="4"/>
+  <polygon points="256,224 282,256 256,288 230,256" fill="#c338ff" filter="url(#iconGlow)"/>
+  <text x="256" y="440" font-family="system-ui, sans-serif" font-size="38" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="8">BUNKER25</text>
+</svg>

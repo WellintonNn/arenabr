@@ -1,0 +1,6 @@
+{
+  "name": "Bunker25 — Summoners Arena 3v3",
+  "description": "Arena tática 3v3 com heróis elementais, despertar estilo Summoners War, relicário arcano de Veromos e combate cinematográfico.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

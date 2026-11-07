@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Bunker25 — Summoners Arena 3v3",
+  "short_name": "Bunker25",
+  "description": "Arena tática 3v3 inspirada no Summoners War com heróis elementais e despertar épico.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050c14",
+  "theme_color": "#07121c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
